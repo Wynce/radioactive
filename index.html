@@ -18,104 +18,131 @@
     .controls {
       margin-top: 1.5rem;
     }
-    input[type="range"] {
+    input[type="range"], input[type="number"], select {
       width: 60%;
+      margin-top: 0.5rem;
     }
     .output {
       margin-top: 2rem;
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       color: #004d40;
+      min-height: 80px;
     }
     canvas {
       margin-top: 2rem;
       max-width: 100%;
+      background: white;
+      border: 1px solid #ccc;
     }
   </style>
 </head>
 <body>
   <h1>Radioactive Decay Simulation</h1>
-  <p>Adjust the half-life and click simulate to visualize radioactive decay over time.</p>
+  <p>Select an isotope or enter a custom half-life to watch the decay over time.</p>
 
   <div class="controls">
+    <label for="isotope">Choose Isotope:</label><br>
+    <select id="isotope" onchange="updateHalfLife()">
+      <option value="5">Custom (Manual)</option>
+      <option value="5730">Carbon-14 (5,730 yrs)</option>
+      <option value="1600">Radon-222 (3.8 days)</option>
+      <option value="24">Sodium-24 (15 hrs)</option>
+      <option value="0.5">Unstable Sample (0.5s)</option>
+    </select><br><br>
+
     <label for="halfLife">Half-life (seconds): <span id="halfLifeVal">5</span></label><br>
-    <input type="range" id="halfLife" min="1" max="20" value="5" />
+    <input type="range" id="halfLife" min="0.1" max="600" step="0.1" value="5" oninput="halfLifeVal.textContent=this.value" />
     <br><br>
-    <button onclick="runSimulation()">Simulate Decay</button>
+
+    <label for="atoms">Initial Atoms:</label><br>
+    <input type="number" id="atoms" value="1000" min="1" max="1000000" />
+    <br><br>
+
+    <button onclick="startDecay()">Start Animated Simulation</button>
   </div>
 
-  <div class="output" id="resultBox"></div>
-
+  <div class="output" id="resultBox">Waiting to start...</div>
   <canvas id="decayChart" width="600" height="300"></canvas>
 
   <script>
-    const halfLifeSlider = document.getElementById('halfLife');
-    const halfLifeDisplay = document.getElementById('halfLifeVal');
-    halfLifeSlider.oninput = () => {
-      halfLifeDisplay.textContent = halfLifeSlider.value;
-    };
+    const halfLifeInput = document.getElementById('halfLife');
+    const isotopeSelect = document.getElementById('isotope');
+    const resultBox = document.getElementById('resultBox');
+    const canvas = document.getElementById('decayChart');
+    const ctx = canvas.getContext('2d');
 
-    function runSimulation() {
-      const halfLife = parseInt(halfLifeSlider.value);
-      const totalAtoms = 1000;
-      const timeSteps = 20;
-      const resultBox = document.getElementById('resultBox');
-      const chart = document.getElementById('decayChart').getContext('2d');
+    let interval, dataPoints = [], startTime = 0;
 
-      let dataPoints = [];
-      let atomsLeft = totalAtoms;
-
-      resultBox.innerHTML = '';
-      for (let t = 0; t <= timeSteps; t++) {
-        let decayFactor = Math.pow(0.5, t / halfLife);
-        let atoms = Math.round(totalAtoms * decayFactor);
-        dataPoints.push({ t, atoms });
-        resultBox.innerHTML += `Time ${t}s: ${atoms} atoms remaining<br>`;
-      }
-
-      // Draw the chart manually (no external libraries)
-      drawDecayChart(chart, dataPoints);
+    function updateHalfLife() {
+      const value = parseFloat(isotopeSelect.value);
+      halfLifeInput.value = value;
+      document.getElementById('halfLifeVal').textContent = value;
     }
 
-    function drawDecayChart(ctx, data) {
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    function startDecay() {
+      if (interval) clearInterval(interval);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // chart margins
+      const halfLife = parseFloat(halfLifeInput.value);
+      const totalAtoms = parseInt(document.getElementById('atoms').value);
+      const duration = 30; // seconds of animation
+      const fps = 1; // 1 update per second
+
+      let atoms = totalAtoms;
+      let t = 0;
+      dataPoints = [];
+
+      resultBox.innerHTML = `Starting with ${totalAtoms} atoms, half-life: ${halfLife}s`;
+
+      interval = setInterval(() => {
+        const decayFactor = Math.pow(0.5, t / halfLife);
+        const remaining = Math.round(totalAtoms * decayFactor);
+        dataPoints.push({ t, atoms: remaining });
+
+        resultBox.innerHTML = `⏱️ Time: ${t}s<br>💠 Atoms remaining: ${remaining}`;
+        drawChart();
+
+        if (t >= duration || remaining < 1) clearInterval(interval);
+        t++;
+      }, 1000 / fps);
+    }
+
+    function drawChart() {
       const padding = 40;
-      const w = ctx.canvas.width - padding * 2;
-      const h = ctx.canvas.height - padding * 2;
+      const w = canvas.width - padding * 2;
+      const h = canvas.height - padding * 2;
 
-      // axis
-      ctx.strokeStyle = "#333";
-      ctx.lineWidth = 1.5;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Axis
+      ctx.strokeStyle = "#000";
       ctx.beginPath();
       ctx.moveTo(padding, padding);
       ctx.lineTo(padding, h + padding);
       ctx.lineTo(w + padding, h + padding);
       ctx.stroke();
 
-      // plot line
-      ctx.strokeStyle = "#00796B";
+      // Data line
+      ctx.strokeStyle = "#00897B";
       ctx.lineWidth = 2;
       ctx.beginPath();
 
-      data.forEach((point, i) => {
-        const x = padding + (i / data.length) * w;
-        const y = padding + h - (point.atoms / 1000) * h;
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      });
+      const maxT = Math.max(...dataPoints.map(d => d.t));
+      const maxY = Math.max(...dataPoints.map(d => d.atoms));
 
+      dataPoints.forEach((pt, i) => {
+        const x = padding + (pt.t / maxT) * w;
+        const y = padding + h - (pt.atoms / maxY) * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
       ctx.stroke();
 
-      // labels
+      // Labels
       ctx.fillStyle = "#000";
       ctx.font = "12px Arial";
-      ctx.fillText("0", padding - 10, h + padding + 15);
-      ctx.fillText("Time →", w + padding - 40, h + padding + 20);
-      ctx.fillText("↑ Atoms", padding - 35, padding + 10);
+      ctx.fillText("Time →", canvas.width - 50, h + padding + 20);
+      ctx.fillText("↑ Atoms", padding - 30, padding + 10);
     }
   </script>
 </body>
